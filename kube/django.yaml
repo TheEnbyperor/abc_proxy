@@ -1,0 +1,213 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: django-static
+  namespace: abc
+  annotations:
+    volume.beta.kubernetes.io/storage-class: "gluster-heketi"
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: django-media
+  namespace: abc
+  annotations:
+    volume.beta.kubernetes.io/storage-class: "gluster-heketi"
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: django-conf
+  namespace: abc
+data:
+  HOST: abc.cardifftec.uk
+  DJANGO_SETTINGS_MODULE: apbc_proxy.settings
+  EXTERNAL_URL: "https://abc.cardifftec.uk"
+  SENTRY_ENVIRONMENT: "prod"
+  CELERY_RESULT_BACKEND: "redis://redis"
+  KEYCLOAK_SERVER_URL: "https://account.cardifftec.uk/"
+  KEYCLOAK_REALM: wwfypc
+  KEYCLOAK_SCOPES: "openid email profile"
+  KEYCLOAK_CLIENT_ID: "abc-proxy"
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: db-conf
+  namespace: abc
+data:
+  HOST: "postgres.postgres"
+  NAME: "abc"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+  namespace: abc
+  labels:
+    app: django
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django
+  template:
+    metadata:
+      labels:
+        app: django
+    spec:
+      volumes:
+        - name: static
+          persistentVolumeClaim:
+            claimName: django-static
+        - name: media
+          persistentVolumeClaim:
+            claimName: django-media
+      initContainers:
+        - name: django
+          image: theenbyperor/wwfypc-abc:(version)
+          imagePullPolicy: Always
+          command: ["sh", "-c", "python3 manage.py collectstatic --noinput && python3 manage.py migrate && python3 manage.py sync-keycloak"]
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: "/app/static/"
+              name: static
+            - mountPath: "/app/media/"
+              name: media
+          envFrom:
+            - configMapRef:
+                name: django-conf
+            - configMapRef:
+                name: db-conf
+              prefix: "DB_"
+            - secretRef:
+                name: db-creds
+              prefix: "DB_"
+            - secretRef:
+                name: django-secret
+            - secretRef:
+                name: keycloak
+              prefix: "KEYCLOAK_"
+            - secretRef:
+                name: rabbitmq-user
+              prefix: "CELERY_BROKER_"
+            - secretRef:
+                name: abc-msp
+              prefix: "ABC_MSP_"
+      containers:
+        - name: gunicorn
+          image: theenbyperor/wwfypc-abc:(version)
+          imagePullPolicy: Always
+          command: ["gunicorn", "-w", "8", "-b", "0.0.0.0:8000", "--forwarded-allow-ips", "*", "--access-logfile", "-", "abc_proxy.wsgi:application"]
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: "/app/static/"
+              name: static
+            - mountPath: "/app/media/"
+              name: media
+          envFrom:
+            - configMapRef:
+                name: django-conf
+            - configMapRef:
+                name: db-conf
+              prefix: "DB_"
+            - secretRef:
+                name: db-creds
+              prefix: "DB_"
+            - secretRef:
+                name: django-secret
+            - secretRef:
+                name: keycloak
+              prefix: "KEYCLOAK_"
+            - secretRef:
+                name: rabbitmq-user
+              prefix: "CELERY_BROKER_"
+            - secretRef:
+                name: abc-msp
+              prefix: "ABC_MSP_"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery
+  namespace: abc
+  labels:
+    app: celery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery
+  template:
+    metadata:
+      labels:
+        app: celery
+    spec:
+      volumes:
+        - name: static
+          persistentVolumeClaim:
+            claimName: django-static
+        - name: media
+          persistentVolumeClaim:
+            claimName: django-media
+      containers:
+        - name: celery
+          image: theenbyperor/wwfypc-abc:(version)
+          imagePullPolicy: Always
+          command: ["celery", "worker", "-A", "abc_proxy", "--loglevel=INFO", "-c", "32"]
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: "/app/static/"
+              name: static
+            - mountPath: "/app/media/"
+              name: media
+          envFrom:
+            - configMapRef:
+                name: django-conf
+            - configMapRef:
+                name: db-conf
+              prefix: "DB_"
+            - secretRef:
+                name: db-creds
+              prefix: "DB_"
+            - secretRef:
+                name: django-secret
+            - secretRef:
+                name: keycloak
+              prefix: "KEYCLOAK_"
+            - secretRef:
+                name: rabbitmq-user
+              prefix: "CELERY_BROKER_"
+            - secretRef:
+                name: abc-msp
+              prefix: "ABC_MSP_"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: abc
+  name: django
+  labels:
+    app: django
+spec:
+  selector:
+    app: django
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: gunicorn

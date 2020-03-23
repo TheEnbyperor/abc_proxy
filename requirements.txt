@@ -1,0 +1,7 @@
+Django
+pyjwt
+celery
+requests
+backoff
+pycrypto
+git+https://github.com/TheEnbyperor/django-keycloak-auth

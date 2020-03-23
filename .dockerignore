@@ -1,0 +1,7 @@
+secrets
+venv
+kube
+db.sqlite3
+build.sh
+media
+static
