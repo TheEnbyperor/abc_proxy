@@ -33,7 +33,7 @@ metadata:
   namespace: abc
 data:
   HOST: abc.cardifftec.uk
-  DJANGO_SETTINGS_MODULE: apbc_proxy.settings
+  DJANGO_SETTINGS_MODULE: abc_proxy.settings
   EXTERNAL_URL: "https://abc.cardifftec.uk"
   SENTRY_ENVIRONMENT: "prod"
   CELERY_RESULT_BACKEND: "redis://redis"

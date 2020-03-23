@@ -4,4 +4,5 @@ celery
 requests
 backoff
 pycrypto
+sentry_sdk
 git+https://github.com/TheEnbyperor/django-keycloak-auth
